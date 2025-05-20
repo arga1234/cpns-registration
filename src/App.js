@@ -17,7 +17,7 @@ export default function CPNSRegistrationPage() {
 
     setLoading(true);
     try {
-      const docRef = doc(db, "peserta-cpns", noPeserta);
+      const docRef = doc(db, "peserta-cpns-v2", noPeserta);
       const docSnap = await getDoc(docRef);
 
       if (!docSnap.exists()) {
