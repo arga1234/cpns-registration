@@ -4,7 +4,7 @@ import { IdcardOutlined } from "@ant-design/icons";
 import "antd/dist/reset.css";
 import "./App.css";
 import { db } from "./firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 const { Title } = Typography;
 
@@ -25,6 +25,12 @@ export default function CPNSRegistrationPage() {
           title: "Data tidak ditemukan",
           content: "Nomor peserta tidak terdaftar.",
         });
+        // log: not found
+        await addDoc(collection(db, "logs"), {
+          event: "lookup_failed",
+          noPeserta,
+          timestamp: serverTimestamp(),
+        });
         return;
       }
 
@@ -40,7 +46,7 @@ export default function CPNSRegistrationPage() {
               `Hai saya sudah terverifikasi di database namun saya belum join grup resmi CPNS Disdik.\n\nNama: ${data.nama}\nNomor Peserta: ${noPeserta}\nJabatan: ${data.jabatan}`
             );
             if (/iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent) || 
-            (/Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent))) {
+                (/Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent))) {
               window.location.href = `https://wa.me/6289524801052?text=${pesan}`;
             } else {
               window.open(`https://wa.me/6289524801052?text=${pesan}`, "_blank");
@@ -48,6 +54,13 @@ export default function CPNSRegistrationPage() {
           },
           content:
             "Anda telah Terverifkasi. Bila Anda sudah terverifikasi namun belum bergabung di grup resmi, silakan klik tombol Hubungi Admin.",
+        });
+        // log: already verified lookup
+        await addDoc(collection(db, "logs"), {
+          event: "lookup_verified",
+          noPeserta,
+          userData: data,
+          timestamp: serverTimestamp(),
         });
       } else {
         Modal.confirm({
@@ -60,11 +73,25 @@ export default function CPNSRegistrationPage() {
             contactAdmin(data.nama, noPeserta, data.jabatan);
           },
         });
+        // log: not yet verified lookup
+        await addDoc(collection(db, "logs"), {
+          event: "lookup_not_verified",
+          noPeserta,
+          userData: data,
+          timestamp: serverTimestamp(),
+        });
       }
     } catch (error) {
       Modal.error({
         title: "Terjadi kesalahan",
         content: error.message,
+      });
+      // log: error on lookup
+      await addDoc(collection(db, "logs"), {
+        event: "lookup_error",
+        noPeserta: values.noPeserta,
+        error: error.message,
+        timestamp: serverTimestamp(),
       });
     } finally {
       setLoading(false);
@@ -81,26 +108,41 @@ export default function CPNSRegistrationPage() {
       async onOk() {
         setLoading(true);
         try {
-          const pesertaRef = doc(db, "peserta-cpns", noPeserta);
+          const pesertaRef = doc(db, "peserta-cpns-v2", noPeserta);
           await updateDoc(pesertaRef, {
             sudahJoin: true,
+          });
+
+          // log: update join status
+          await addDoc(collection(db, "logs"), {
+            event: "update_sudahJoin",
+            noPeserta,
+            updatedFields: { sudahJoin: true },
+            timestamp: serverTimestamp(),
           });
 
           const pesan = encodeURIComponent(
             `Hai saya sudah verifikasi diri lewat web verifikasi & pendaftaran grup resmi CPNS Disdik.\n\nNama: ${namaLengkap}\nNomor Peserta: ${noPeserta}\nJabatan: ${jabatan}`
           );
-            if (/iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent) || 
+          if (/iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent) || 
               (/Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent))) {
-              window.location.href = `https://wa.me/6289524801052?text=${pesan}`;
-            } else {
-              window.open(`https://wa.me/6289524801052?text=${pesan}`, "_blank");
-            }
+            window.location.href = `https://wa.me/6289524801052?text=${pesan}`;
+          } else {
+            window.open(`https://wa.me/6289524801052?text=${pesan}`, "_blank");
+          }
 
           Modal.destroyAll(); // Tutup semua modal
         } catch (error) {
           Modal.error({
             title: "Gagal mengupdate status",
             content: error.message,
+          });
+          // log: error on update
+          await addDoc(collection(db, "logs"), {
+            event: "update_error",
+            noPeserta,
+            error: error.message,
+            timestamp: serverTimestamp(),
           });
         } finally {
           setLoading(false);
